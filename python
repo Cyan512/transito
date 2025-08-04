@@ -1,0 +1,880 @@
+import pygame
+import random
+import math
+from enum import Enum
+from dataclasses import dataclass
+from typing import List, Tuple, Optional
+import time
+
+# Inicializar Pygame
+pygame.init()
+
+# Constantes
+ANCHO = 1400
+ALTO = 900
+FPS = 60
+
+# Colores más realistas
+COLORES = {
+    'ASFALTO': (45, 45, 45),
+    'ASFALTO_VIEJO': (55, 50, 45),  # Para calles del centro histórico
+    'LINEA_AMARILLA': (255, 255, 100),
+    'LINEA_BLANCA': (220, 220, 220),
+    'ACERA': (180, 180, 180),
+    'PIEDRA': (120, 110, 100),  # Para calles empedradas
+    'EDIFICIO_COLONIAL': (160, 82, 45),
+    'EDIFICIO_MODERNO': (100, 100, 120),
+    'PLAZA': (85, 140, 85),
+    'PASTO': (60, 120, 60),
+    'TIERRA': (139, 125, 107),
+    
+    # Vehículos con colores más variados y realistas
+    'AUTO_ROJO': (180, 30, 30),
+    'AUTO_AZUL': (30, 80, 180),
+    'AUTO_BLANCO': (240, 240, 240),
+    'AUTO_NEGRO': (40, 40, 40),
+    'COMBI_AMARILLA': (255, 200, 0),
+    'COMBI_AZUL': (0, 120, 200),
+    'MOTO_ROJA': (200, 50, 50),
+    'MOTO_NEGRA': (60, 60, 60),
+    'TAXI': (255, 255, 0),
+    
+    'SEMAFORO_ROJO': (255, 50, 50),
+    'SEMAFORO_VERDE': (50, 255, 50),
+    'SEMAFORO_AMARILLO': (255, 255, 50),
+    'FONDO': (25, 35, 25),
+    'TEXTO': (255, 255, 255)
+}
+
+class TipoVehiculo(Enum):
+    AUTO = 1
+    COMBI = 2
+    MOTO = 3
+    TAXI = 4
+
+class EstadoSemaforo(Enum):
+    ROJO = 1
+    AMARILLO = 2
+    VERDE = 3
+
+class DireccionCalle(Enum):
+    HORIZONTAL = 1
+    VERTICAL = 2
+    DIAGONAL = 3
+
+@dataclass
+class Punto:
+    x: float
+    y: float
+    
+    def distancia_a(self, otro: 'Punto') -> float:
+        return math.sqrt((self.x - otro.x)**2 + (self.y - otro.y)**2)
+
+@dataclass
+class Calle:
+    inicio: Punto
+    fin: Punto
+    ancho: int
+    tipo: str  # 'principal', 'secundaria', 'empedrada'
+    direccion: DireccionCalle
+    velocidad_maxima: float
+
+class Vehiculo:
+    def __init__(self, tipo: TipoVehiculo, posicion: Punto, calle_actual: Calle):
+        self.tipo = tipo
+        self.posicion = posicion
+        self.calle_actual = calle_actual
+        self.direccion = self._calcular_direccion_inicial()
+        self.velocidad_maxima = self._obtener_velocidad_maxima()
+        self.velocidad_actual = 0
+        self.velocidad_objetivo = 0
+        self.tamano = self._obtener_tamano()
+        self.color = self._obtener_color()
+        self.ruta = []
+        self.indice_ruta = 0
+        self.tiempo_parada = 0
+        self.comportamiento = self._obtener_comportamiento()
+        self.carril = random.choice([-1, 1])  # Lado de la calle
+        
+    def _calcular_direccion_inicial(self) -> float:
+        dx = self.calle_actual.fin.x - self.calle_actual.inicio.x
+        dy = self.calle_actual.fin.y - self.calle_actual.inicio.y
+        return math.atan2(dy, dx)
+        
+    def _obtener_velocidad_maxima(self) -> float:
+        base_speeds = {
+            TipoVehiculo.AUTO: 2.5,
+            TipoVehiculo.COMBI: 1.8,
+            TipoVehiculo.MOTO: 3.2,
+            TipoVehiculo.TAXI: 2.0
+        }
+        # Ajustar por tipo de calle
+        factor = 1.0
+        if self.calle_actual.tipo == 'empedrada':
+            factor = 0.6
+        elif self.calle_actual.tipo == 'secundaria':
+            factor = 0.8
+            
+        return base_speeds[self.tipo] * factor * random.uniform(0.8, 1.2)
+    
+    def _obtener_tamano(self) -> Tuple[int, int]:
+        tamanos = {
+            TipoVehiculo.AUTO: (22, 14),
+            TipoVehiculo.COMBI: (35, 18),
+            TipoVehiculo.MOTO: (14, 10),
+            TipoVehiculo.TAXI: (22, 14)
+        }
+        return tamanos[self.tipo]
+    
+    def _obtener_color(self) -> Tuple[int, int, int]:
+        colores_por_tipo = {
+            TipoVehiculo.AUTO: [COLORES['AUTO_ROJO'], COLORES['AUTO_AZUL'], 
+                               COLORES['AUTO_BLANCO'], COLORES['AUTO_NEGRO']],
+            TipoVehiculo.COMBI: [COLORES['COMBI_AMARILLA'], COLORES['COMBI_AZUL']],
+            TipoVehiculo.MOTO: [COLORES['MOTO_ROJA'], COLORES['MOTO_NEGRA']],
+            TipoVehiculo.TAXI: [COLORES['TAXI']]
+        }
+        return random.choice(colores_por_tipo[self.tipo])
+    
+    def _obtener_comportamiento(self) -> dict:
+        """Define comportamientos específicos por tipo de vehículo"""
+        comportamientos = {
+            TipoVehiculo.AUTO: {
+                'paciencia': random.uniform(0.7, 1.0),
+                'agresividad': random.uniform(0.3, 0.7),
+                'tiempo_reaccion': random.uniform(0.5, 1.0)
+            },
+            TipoVehiculo.COMBI: {
+                'paciencia': random.uniform(0.4, 0.8),
+                'agresividad': random.uniform(0.6, 0.9),  # Más agresivas
+                'tiempo_reaccion': random.uniform(0.8, 1.5),
+                'paradas_frecuentes': True
+            },
+            TipoVehiculo.MOTO: {
+                'paciencia': random.uniform(0.2, 0.5),
+                'agresividad': random.uniform(0.8, 1.0),  # Muy agresivas
+                'tiempo_reaccion': random.uniform(0.2, 0.5),
+                'puede_zigzaguear': True
+            },
+            TipoVehiculo.TAXI: {
+                'paciencia': random.uniform(0.5, 0.8),
+                'agresividad': random.uniform(0.4, 0.8),
+                'tiempo_reaccion': random.uniform(0.6, 1.0),
+                'busca_pasajeros': True
+            }
+        }
+        return comportamientos[self.tipo]
+    
+    def establecer_ruta(self, calles: List[Calle]):
+        self.ruta = calles
+        self.indice_ruta = 0
+        
+    def actualizar(self, otros_vehiculos: List['Vehiculo'], semaforos: List['Semaforo']):
+        if not self.ruta or self.indice_ruta >= len(self.ruta):
+            return False  # Vehículo debe ser eliminado
+            
+        calle_actual = self.ruta[self.indice_ruta]
+        
+        # Calcular objetivo en la calle actual
+        progreso = self._calcular_progreso_en_calle()
+        if progreso >= 1.0:
+            self.indice_ruta += 1
+            if self.indice_ruta >= len(self.ruta):
+                return False
+            calle_actual = self.ruta[self.indice_ruta]
+            self._actualizar_direccion()
+        
+        # Determinar velocidad objetivo
+        self.velocidad_objetivo = self._calcular_velocidad_objetivo(otros_vehiculos, semaforos)
+        
+        # Comportamientos especiales
+        self._aplicar_comportamiento_especial()
+        
+        # Suavizar cambios de velocidad
+        self._actualizar_velocidad()
+        
+        # Mover vehículo
+        self._mover()
+        
+        return True
+    
+    def _calcular_progreso_en_calle(self) -> float:
+        if not self.ruta:
+            return 1.0
+        calle = self.ruta[self.indice_ruta]
+        total = calle.inicio.distancia_a(calle.fin)
+        actual = calle.inicio.distancia_a(self.posicion)
+        return min(actual / total, 1.0) if total > 0 else 1.0
+    
+    def _actualizar_direccion(self):
+        if self.indice_ruta < len(self.ruta):
+            calle = self.ruta[self.indice_ruta]
+            dx = calle.fin.x - calle.inicio.x
+            dy = calle.fin.y - calle.inicio.y
+            self.direccion = math.atan2(dy, dx)
+    
+    def _calcular_velocidad_objetivo(self, otros_vehiculos: List['Vehiculo'], 
+                                   semaforos: List['Semaforo']) -> float:
+        vel_objetivo = self.velocidad_maxima
+        
+        # Verificar semáforos
+        for semaforo in semaforos:
+            if self._debe_detenerse_por_semaforo(semaforo):
+                vel_objetivo = 0
+                break
+        
+        # Verificar otros vehículos
+        vehiculo_adelante = self._encontrar_vehiculo_adelante(otros_vehiculos)
+        if vehiculo_adelante:
+            distancia = self.posicion.distancia_a(vehiculo_adelante.posicion)
+            if distancia < 40:  # Muy cerca
+                vel_objetivo = min(vel_objetivo, vehiculo_adelante.velocidad_actual * 0.5)
+            elif distancia < 60:  # Cerca
+                vel_objetivo = min(vel_objetivo, vehiculo_adelante.velocidad_actual * 0.8)
+        
+        return vel_objetivo
+    
+    def _debe_detenerse_por_semaforo(self, semaforo: 'Semaforo') -> bool:
+        if semaforo.estado == EstadoSemaforo.VERDE:
+            return False
+            
+        distancia = self.posicion.distancia_a(semaforo.posicion)
+        if distancia > 80:  # Muy lejos
+            return False
+            
+        # Verificar si se está acercando al semáforo
+        dx = semaforo.posicion.x - self.posicion.x
+        dy = semaforo.posicion.y - self.posicion.y
+        angulo_al_semaforo = math.atan2(dy, dx)
+        
+        diferencia_angulo = abs(self.direccion - angulo_al_semaforo)
+        diferencia_angulo = min(diferencia_angulo, 2 * math.pi - diferencia_angulo)
+        
+        return diferencia_angulo < math.pi / 3  # 60 grados
+    
+    def _encontrar_vehiculo_adelante(self, otros_vehiculos: List['Vehiculo']) -> Optional['Vehiculo']:
+        vehiculo_mas_cercano = None
+        distancia_minima = float('inf')
+        
+        for otro in otros_vehiculos:
+            if otro == self:
+                continue
+                
+            # Verificar si está adelante
+            dx = otro.posicion.x - self.posicion.x
+            dy = otro.posicion.y - self.posicion.y
+            angulo_al_otro = math.atan2(dy, dx)
+            
+            diferencia_angulo = abs(self.direccion - angulo_al_otro)
+            diferencia_angulo = min(diferencia_angulo, 2 * math.pi - diferencia_angulo)
+            
+            if diferencia_angulo < math.pi / 4:  # 45 grados adelante
+                distancia = self.posicion.distancia_a(otro.posicion)
+                if distancia < distancia_minima:
+                    distancia_minima = distancia
+                    vehiculo_mas_cercano = otro
+        
+        return vehiculo_mas_cercano
+    
+    def _aplicar_comportamiento_especial(self):
+        # Combis pueden hacer paradas ocasionales
+        if (self.tipo == TipoVehiculo.COMBI and 
+            self.comportamiento.get('paradas_frecuentes') and
+            random.random() < 0.001):  # 0.1% de chance por frame
+            self.tiempo_parada = random.uniform(60, 180)  # 1-3 segundos a 60 FPS
+        
+        # Reducir tiempo de parada
+        if self.tiempo_parada > 0:
+            self.tiempo_parada -= 1
+            self.velocidad_objetivo = 0
+    
+    def _actualizar_velocidad(self):
+        aceleracion = 0.08 * self.comportamiento['agresividad']
+        frenado = 0.15
+        
+        if self.velocidad_actual < self.velocidad_objetivo:
+            self.velocidad_actual = min(
+                self.velocidad_actual + aceleracion, 
+                self.velocidad_objetivo
+            )
+        else:
+            self.velocidad_actual = max(
+                self.velocidad_actual - frenado, 
+                max(0, self.velocidad_objetivo)
+            )
+    
+    def _mover(self):
+        # Añadir algo de ruido para movimiento más realista
+        ruido = random.uniform(-0.1, 0.1) * (1 - self.comportamiento['paciencia'])
+        direccion_con_ruido = self.direccion + ruido
+        
+        self.posicion.x += math.cos(direccion_con_ruido) * self.velocidad_actual
+        self.posicion.y += math.sin(direccion_con_ruido) * self.velocidad_actual
+    
+    def dibujar(self, pantalla):
+        # Dibujar sombra
+        sombra_offset = 2
+        self._dibujar_vehiculo(pantalla, 
+                              Punto(self.posicion.x + sombra_offset, 
+                                   self.posicion.y + sombra_offset),
+                              (0, 0, 0, 100))
+        
+        # Dibujar vehículo
+        self._dibujar_vehiculo(pantalla, self.posicion, self.color)
+        
+        # Dibujar indicador de estado (opcional)
+        if self.tiempo_parada > 0:
+            pygame.draw.circle(pantalla, (255, 255, 0), 
+                             (int(self.posicion.x), int(self.posicion.y - 20)), 3)
+    
+    def _dibujar_vehiculo(self, pantalla, posicion: Punto, color):
+        ancho, alto = self.tamano
+        cos_a = math.cos(self.direccion)
+        sin_a = math.sin(self.direccion)
+        
+        # Puntos del rectángulo
+        puntos = [
+            (-ancho/2, -alto/2), (ancho/2, -alto/2),
+            (ancho/2, alto/2), (-ancho/2, alto/2)
+        ]
+        
+        # Rotar y trasladar
+        puntos_rotados = []
+        for px, py in puntos:
+            x_rot = px * cos_a - py * sin_a + posicion.x
+            y_rot = px * sin_a + py * cos_a + posicion.y
+            puntos_rotados.append((x_rot, y_rot))
+        
+        pygame.draw.polygon(pantalla, color, puntos_rotados)
+        
+        # Detalles adicionales
+        if self.tipo == TipoVehiculo.TAXI:
+            # Letrero de taxi
+            pygame.draw.rect(pantalla, (0, 0, 0), 
+                           (posicion.x - 8, posicion.y - 12, 16, 6))
+
+class Semaforo:
+    def __init__(self, posicion: Punto, tipo: str = 'normal'):
+        self.posicion = posicion
+        self.estado = EstadoSemaforo.VERDE
+        self.tipo = tipo
+        self.tiempo_cambio = time.time() + random.uniform(5, 12)
+        
+        # Tiempos más realistas
+        if tipo == 'principal':
+            self.duracion_verde = random.uniform(8, 15)
+            self.duracion_rojo = random.uniform(6, 12)
+        else:
+            self.duracion_verde = random.uniform(5, 10)
+            self.duracion_rojo = random.uniform(4, 8)
+            
+        self.duracion_amarillo = 3
+    
+    def actualizar(self):
+        tiempo_actual = time.time()
+        if tiempo_actual >= self.tiempo_cambio:
+            if self.estado == EstadoSemaforo.VERDE:
+                self.estado = EstadoSemaforo.AMARILLO
+                self.tiempo_cambio = tiempo_actual + self.duracion_amarillo
+            elif self.estado == EstadoSemaforo.AMARILLO:
+                self.estado = EstadoSemaforo.ROJO
+                self.tiempo_cambio = tiempo_actual + self.duracion_rojo
+            else:  # ROJO
+                self.estado = EstadoSemaforo.VERDE
+                self.tiempo_cambio = tiempo_actual + self.duracion_verde
+    
+    def dibujar(self, pantalla):
+        # Poste del semáforo
+        pygame.draw.rect(pantalla, (80, 80, 80), 
+                        (self.posicion.x - 3, self.posicion.y - 20, 6, 40))
+        
+        # Caja del semáforo
+        pygame.draw.rect(pantalla, (40, 40, 40), 
+                        (self.posicion.x - 15, self.posicion.y - 25, 30, 20))
+        
+        # Luces
+        colores = [(100, 100, 100)] * 3  # Apagadas por defecto
+        if self.estado == EstadoSemaforo.ROJO:
+            colores[0] = COLORES['SEMAFORO_ROJO']
+        elif self.estado == EstadoSemaforo.AMARILLO:
+            colores[1] = COLORES['SEMAFORO_AMARILLO']
+        else:  # VERDE
+            colores[2] = COLORES['SEMAFORO_VERDE']
+        
+        for i, color in enumerate(colores):
+            pygame.draw.circle(pantalla, color, 
+                             (int(self.posicion.x - 10 + i * 10), 
+                              int(self.posicion.y - 15)), 4)
+
+class SimulacionTrafico:
+    def __init__(self):
+        self.pantalla = pygame.display.set_mode((ANCHO, ALTO))
+        pygame.display.set_caption("Simulación Realista - Tráfico del Centro Histórico del Cusco")
+        self.reloj = pygame.time.Clock()
+        
+        self.vehiculos = []
+        self.semaforos = []
+        self.calles = self._crear_red_calles_cusco()
+        self._crear_semaforos_estrategicos()
+        
+        # Estadísticas mejoradas
+        self.vehiculos_generados = 0
+        self.tiempo_ultima_generacion = time.time()
+        self.estadisticas = {
+            'autos': 0, 'combis': 0, 'motos': 0, 'taxis': 0,
+            'promedio_velocidad': 0, 'congestion': 0
+        }
+        
+        # Generación más inteligente
+        self.patrones_horarios = self._crear_patrones_horarios()
+        self.hora_simulada = 8.0  # 8:00 AM
+    
+    def _crear_red_calles_cusco(self) -> List[Calle]:
+        """Red de calles más realista del centro histórico"""
+        calles = []
+        
+        # Avenidas principales
+        calles.extend([
+            # Av. El Sol - arteria principal este-oeste
+            Calle(Punto(0, 400), Punto(ANCHO, 400), 40, 'principal', DireccionCalle.HORIZONTAL, 3.0),
+            Calle(Punto(ANCHO, 420), Punto(0, 420), 40, 'principal', DireccionCalle.HORIZONTAL, 3.0),
+            
+            # Av. de la Cultura - norte-sur
+            Calle(Punto(700, 0), Punto(700, ALTO), 35, 'principal', DireccionCalle.VERTICAL, 2.8),
+            Calle(Punto(720, ALTO), Punto(720, 0), 35, 'principal', DireccionCalle.VERTICAL, 2.8),
+        ])
+        
+        # Calles del centro histórico (más estrechas y empedradas)
+        calles.extend([
+            # Calle Plateros
+            Calle(Punto(100, 300), Punto(600, 320), 20, 'empedrada', DireccionCalle.HORIZONTAL, 1.5),
+            
+            # Calle Procuradores
+            Calle(Punto(150, 280), Punto(650, 300), 18, 'empedrada', DireccionCalle.HORIZONTAL, 1.2),
+            
+            # Cuesta San Blas (empinada)
+            Calle(Punto(500, 200), Punto(580, 500), 25, 'empedrada', DireccionCalle.DIAGONAL, 1.0),
+            
+            # Calles alrededor de la Plaza de Armas
+            Calle(Punto(300, 500), Punto(500, 500), 25, 'empedrada', DireccionCalle.HORIZONTAL, 1.5),
+            Calle(Punto(500, 500), Punto(500, 600), 25, 'empedrada', DireccionCalle.VERTICAL, 1.5),
+            Calle(Punto(500, 600), Punto(300, 600), 25, 'empedrada', DireccionCalle.HORIZONTAL, 1.5),
+            Calle(Punto(300, 600), Punto(300, 500), 25, 'empedrada', DireccionCalle.VERTICAL, 1.5),
+        ])
+        
+        # Calles secundarias
+        calles.extend([
+            Calle(Punto(200, 150), Punto(800, 180), 30, 'secundaria', DireccionCalle.HORIZONTAL, 2.0),
+            Calle(Punto(400, 100), Punto(420, 350), 25, 'secundaria', DireccionCalle.VERTICAL, 2.0),
+            Calle(Punto(900, 200), Punto(950, 700), 28, 'secundaria', DireccionCalle.VERTICAL, 2.2),
+        ])
+        
+        return calles
+    
+    def _crear_semaforos_estrategicos(self):
+        """Coloca semáforos en intersecciones importantes"""
+        intersecciones_importantes = [
+            (Punto(700, 400), 'principal'),  # Av. El Sol con Av. de la Cultura
+            (Punto(400, 400), 'principal'),  # Intersección central
+            (Punto(500, 320), 'normal'),     # Plateros con conexión
+            (Punto(300, 500), 'normal'),     # Entrada a Plaza de Armas
+            (Punto(200, 170), 'normal'),     # Calle secundaria
+        ]
+        
+        for posicion, tipo in intersecciones_importantes:
+            self.semaforos.append(Semaforo(posicion, tipo))
+    
+    def _crear_patrones_horarios(self) -> dict:
+        """Patrones de tráfico según la hora del día"""
+        return {
+            'mañana': {'factor': 1.2, 'tipos': [TipoVehiculo.AUTO, TipoVehiculo.COMBI, TipoVehiculo.TAXI]},
+            'mediodia': {'factor': 0.8, 'tipos': [TipoVehiculo.AUTO, TipoVehiculo.MOTO]},
+            'tarde': {'factor': 1.5, 'tipos': [TipoVehiculo.COMBI, TipoVehiculo.AUTO, TipoVehiculo.TAXI]},
+            'noche': {'factor': 0.4, 'tipos': [TipoVehiculo.TAXI, TipoVehiculo.AUTO]}
+        }
+    
+    def _generar_vehiculo_inteligente(self):
+        """Generación de vehículos basada en patrones realistas"""
+        tiempo_actual = time.time()
+        
+        # Determinar patrón horario
+        if 6 <= self.hora_simulada < 12:
+            patron = self.patrones_horarios['mañana']
+        elif 12 <= self.hora_simulada < 18:
+            patron = self.patrones_horarios['tarde']
+        elif 18 <= self.hora_simulada < 22:
+            patron = self.patrones_horarios['mediodia']
+        else:
+            patron = self.patrones_horarios['noche']
+        
+        # Verificar si debe generar según el patrón
+        intervalo_base = random.uniform(1.0, 3.0)
+        intervalo_ajustado = intervalo_base / patron['factor']
+        
+        if tiempo_actual - self.tiempo_ultima_generacion < intervalo_ajustado:
+            return
+        
+        # Limitar vehículos según capacidad de la simulación
+        if len(self.vehiculos) >= 80:
+            return
+        
+        # Seleccionar tipo de vehículo según patrón
+        tipo = random.choice(patron['tipos'])
+        
+        # Seleccionar calle inicial (preferir principales para mayor realismo)
+        calles_disponibles = [c for c in self.calles if c.tipo in ['principal', 'secundaria']]
+        calle_inicial = random.choice(calles_disponibles)
+        
+        # Posición inicial en la calle
+        posicion_inicial = Punto(
+            calle_inicial.inicio.x + random.uniform(0, 0.1) * (calle_inicial.fin.x - calle_inicial.inicio.x),
+            calle_inicial.inicio.y + random.uniform(0, 0.1) * (calle_inicial.fin.y - calle_inicial.inicio.y)
+        )
+        
+        vehiculo = Vehiculo(tipo, posicion_inicial, calle_inicial)
+        
+        # Crear ruta realista (2-5 calles)
+        ruta = self._generar_ruta_realista(calle_inicial)
+        vehiculo.establecer_ruta(ruta)
+        
+        self.vehiculos.append(vehiculo)
+        self.vehiculos_generados += 1
+        self.estadisticas[tipo.name.lower() + 's'] += 1
+        self.tiempo_ultima_generacion = tiempo_actual
+    
+    def _generar_ruta_realista(self, calle_inicial: Calle) -> List[Calle]:
+        """Genera una ruta realista conectando calles"""
+        ruta = [calle_inicial]
+        calle_actual = calle_inicial
+        
+        for _ in range(random.randint(2, 5)):
+            # Buscar calles conectadas
+            calles_conectadas = []
+            for calle in self.calles:
+                if calle != calle_actual:
+                    # Verificar si las calles se conectan (distancia entre puntos < umbral)
+                    if (calle_actual.fin.distancia_a(calle.inicio) < 50 or
+                        calle_actual.fin.distancia_a(calle.fin) < 50):
+                        calles_conectadas.append(calle)
+            
+            if calles_conectadas:
+                calle_actual = random.choice(calles_conectadas)
+                ruta.append(calle_actual)
+            else:
+                break
+        
+        return ruta
+    
+    def _actualizar_estadisticas(self):
+        """Actualiza estadísticas en tiempo real"""
+        if not self.vehiculos:
+            self.estadisticas['promedio_velocidad'] = 0
+            self.estadisticas['congestion'] = 0
+            return
+        
+        # Velocidad promedio
+        velocidad_total = sum(v.velocidad_actual for v in self.vehiculos)
+        self.estadisticas['promedio_velocidad'] = velocidad_total / len(self.vehiculos)
+        
+        # Nivel de congestión (0-100)
+        vehiculos_lentos = sum(1 for v in self.vehiculos if v.velocidad_actual < v.velocidad_maxima * 0.5)
+        self.estadisticas['congestion'] = min(100, (vehiculos_lentos / len(self.vehiculos)) * 100)
+    
+    def _dibujar_mapa_detallado(self):
+        """Dibuja un mapa más detallado y realista"""
+        self.pantalla.fill(COLORES['FONDO'])
+        
+        # Dibujar calles con diferentes texturas
+        for calle in self.calles:
+            color = COLORES['ASFALTO']
+            if calle.tipo == 'empedrada':
+                color = COLORES['PIEDRA']
+            elif calle.tipo == 'secundaria':
+                color = COLORES['ASFALTO_VIEJO']
+            
+            # Calcular puntos para dibujar la calle como rectángulo
+            dx = calle.fin.x - calle.inicio.x
+            dy = calle.fin.y - calle.inicio.y
+            longitud = math.sqrt(dx*dx + dy*dy)
+            
+            if longitud > 0:
+                # Vector unitario perpendicular
+                ux = -dy / longitud
+                uy = dx / longitud
+                
+                # Esquinas del rectángulo de la calle
+                ancho_mitad = calle.ancho / 2
+                esquinas = [
+                    (calle.inicio.x + ux * ancho_mitad, calle.inicio.y + uy * ancho_mitad),
+                    (calle.inicio.x - ux * ancho_mitad, calle.inicio.y - uy * ancho_mitad),
+                    (calle.fin.x - ux * ancho_mitad, calle.fin.y - uy * ancho_mitad),
+                    (calle.fin.x + ux * ancho_mitad, calle.fin.y + uy * ancho_mitad)
+                ]
+                
+                pygame.draw.polygon(self.pantalla, color, esquinas)
+                
+                # Líneas divisorias para calles principales
+                if calle.tipo == 'principal' and calle.ancho > 30:
+                    pygame.draw.line(self.pantalla, COLORES['LINEA_AMARILLA'],
+                                   (calle.inicio.x, calle.inicio.y),
+                                   (calle.fin.x, calle.fin.y), 2)
+        
+        # Dibujar edificios históricos con más detalle
+        edificios = [
+            # Catedral del Cusco
+            {'rect': pygame.Rect(280, 480, 140, 140), 'tipo': 'catedral'},
+            # Iglesia de la Compañía
+            {'rect': pygame.Rect(450, 520, 80, 100), 'tipo': 'iglesia'},
+            # Qorikancha
+            {'rect': pygame.Rect(600, 450, 100, 90), 'tipo': 'templo'},
+            # Edificios coloniales
+            {'rect': pygame.Rect(100, 100, 120, 180), 'tipo': 'colonial'},
+            {'rect': pygame.Rect(250, 150, 100, 120), 'tipo': 'colonial'},
+            {'rect': pygame.Rect(800, 200, 150, 160), 'tipo': 'colonial'},
+            # Mercado San Pedro
+            {'rect': pygame.Rect(50, 650, 200, 150), 'tipo': 'mercado'},
+            # Edificios modernos
+            {'rect': pygame.Rect(900, 100, 80, 200), 'tipo': 'moderno'},
+            {'rect': pygame.Rect(1100, 300, 120, 250), 'tipo': 'moderno'},
+        ]
+        
+        for edificio in edificios:
+            if edificio['tipo'] == 'catedral':
+                pygame.draw.rect(self.pantalla, COLORES['EDIFICIO_COLONIAL'], edificio['rect'])
+                # Torres de la catedral
+                torre1 = pygame.Rect(edificio['rect'].x + 20, edificio['rect'].y - 30, 30, 30)
+                torre2 = pygame.Rect(edificio['rect'].x + 90, edificio['rect'].y - 30, 30, 30)
+                pygame.draw.rect(self.pantalla, COLORES['EDIFICIO_COLONIAL'], torre1)
+                pygame.draw.rect(self.pantalla, COLORES['EDIFICIO_COLONIAL'], torre2)
+            elif edificio['tipo'] == 'colonial':
+                pygame.draw.rect(self.pantalla, COLORES['EDIFICIO_COLONIAL'], edificio['rect'])
+                # Detalles coloniales (balcones)
+                balcon = pygame.Rect(edificio['rect'].x + 10, edificio['rect'].y + 40, 
+                                   edificio['rect'].width - 20, 15)
+                pygame.draw.rect(self.pantalla, (120, 60, 30), balcon)
+            elif edificio['tipo'] == 'moderno':
+                pygame.draw.rect(self.pantalla, COLORES['EDIFICIO_MODERNO'], edificio['rect'])
+            else:
+                pygame.draw.rect(self.pantalla, COLORES['EDIFICIO_COLONIAL'], edificio['rect'])
+        
+        # Plaza de Armas con más detalle
+        plaza = pygame.Rect(300, 500, 200, 100)
+        pygame.draw.rect(self.pantalla, COLORES['PLAZA'], plaza)
+        
+        # Fuente en el centro de la plaza
+        pygame.draw.circle(self.pantalla, (100, 100, 150), (400, 550), 20)
+        pygame.draw.circle(self.pantalla, (150, 150, 200), (400, 550), 15)
+        
+        # Bancos y áreas verdes
+        for i in range(4):
+            x = 320 + i * 40
+            pygame.draw.rect(self.pantalla, (80, 60, 40), (x, 520, 20, 8))  # Bancos
+        
+        # Añadir nombres de lugares
+        font = pygame.font.Font(None, 28)
+        lugares = [
+            ("PLAZA DE ARMAS", 320, 470),
+            ("CATEDRAL", 300, 460),
+            ("AV. EL SOL", 20, 380),
+            ("AV. DE LA CULTURA", 620, 50),
+            ("SAN BLAS", 520, 180),
+            ("MERCADO SAN PEDRO", 60, 630),
+        ]
+        
+        for nombre, x, y in lugares:
+            texto = font.render(nombre, True, COLORES['TEXTO'])
+            # Sombra del texto
+            sombra = font.render(nombre, True, (0, 0, 0))
+            self.pantalla.blit(sombra, (x + 1, y + 1))
+            self.pantalla.blit(texto, (x, y))
+    
+    def _mostrar_estadisticas_avanzadas(self):
+        """Panel de estadísticas más completo"""
+        # Fondo semitransparente para el panel
+        panel = pygame.Surface((350, 200))
+        panel.set_alpha(180)
+        panel.fill((20, 20, 20))
+        self.pantalla.blit(panel, (10, 10))
+        
+        font_titulo = pygame.font.Font(None, 32)
+        font_stats = pygame.font.Font(None, 24)
+        
+        # Título
+        titulo = font_titulo.render("TRÁFICO CUSCO - TIEMPO REAL", True, COLORES['TEXTO'])
+        self.pantalla.blit(titulo, (20, 20))
+        
+        # Hora simulada
+        hora_texto = f"Hora: {int(self.hora_simulada):02d}:{int((self.hora_simulada % 1) * 60):02d}"
+        hora_surface = font_stats.render(hora_texto, True, (200, 200, 255))
+        self.pantalla.blit(hora_surface, (20, 50))
+        
+        # Estadísticas de vehículos
+        stats_vehiculos = [
+            f"🚗 Autos: {self.estadisticas['autos']}",
+            f"🚐 Combis: {self.estadisticas['combis']}",
+            f"🏍️ Motos: {self.estadisticas['motos']}",
+            f"🚕 Taxis: {self.estadisticas['taxis']}",
+            f"Total activos: {len(self.vehiculos)}",
+            f"Generados: {self.vehiculos_generados}"
+        ]
+        
+        for i, stat in enumerate(stats_vehiculos):
+            color = COLORES['TEXTO']
+            if "Autos" in stat:
+                color = COLORES['AUTO_ROJO']
+            elif "Combis" in stat:
+                color = COLORES['COMBI_AMARILLA']
+            elif "Motos" in stat:
+                color = COLORES['MOTO_ROJA']
+            elif "Taxis" in stat:
+                color = COLORES['TAXI']
+            
+            superficie = font_stats.render(stat, True, color)
+            self.pantalla.blit(superficie, (20, 80 + i * 20))
+        
+        # Métricas de tráfico
+        velocidad_promedio = self.estadisticas['promedio_velocidad']
+        congestion = self.estadisticas['congestion']
+        
+        # Barra de velocidad promedio
+        pygame.draw.rect(self.pantalla, (100, 100, 100), (200, 100, 120, 15))
+        ancho_velocidad = int((velocidad_promedio / 3.0) * 120)  # Máx 3.0
+        color_velocidad = (0, 255, 0) if velocidad_promedio > 2 else (255, 255, 0) if velocidad_promedio > 1 else (255, 0, 0)
+        pygame.draw.rect(self.pantalla, color_velocidad, (200, 100, ancho_velocidad, 15))
+        
+        vel_texto = font_stats.render(f"Velocidad: {velocidad_promedio:.1f}", True, COLORES['TEXTO'])
+        self.pantalla.blit(vel_texto, (200, 80))
+        
+        # Barra de congestión
+        pygame.draw.rect(self.pantalla, (100, 100, 100), (200, 140, 120, 15))
+        ancho_congestion = int((congestion / 100) * 120)
+        color_congestion = (255, 0, 0) if congestion > 70 else (255, 255, 0) if congestion > 40 else (0, 255, 0)
+        pygame.draw.rect(self.pantalla, color_congestion, (200, 140, ancho_congestion, 15))
+        
+        cong_texto = font_stats.render(f"Congestión: {congestion:.0f}%", True, COLORES['TEXTO'])
+        self.pantalla.blit(cong_texto, (200, 120))
+    
+    def _mostrar_controles(self):
+        """Muestra los controles disponibles"""
+        font_small = pygame.font.Font(None, 20)
+        controles = [
+            "CONTROLES:",
+            "ESPACIO - Generar vehículo",
+            "R - Reiniciar simulación", 
+            "T - Cambiar hora del día",
+            "C - Mostrar/ocultar calles",
+            "ESC - Salir"
+        ]
+        
+        for i, control in enumerate(controles):
+            color = (255, 255, 100) if i == 0 else (200, 200, 200)
+            superficie = font_small.render(control, True, color)
+            self.pantalla.blit(superficie, (ANCHO - 200, 20 + i * 25))
+    
+    def ejecutar(self):
+        """Bucle principal mejorado de la simulación"""
+        ejecutando = True
+        mostrar_calles = True
+        tiempo_inicio = time.time()
+        
+        print("🎮 Iniciando Simulación Avanzada del Tráfico en Cusco")
+        print("=" * 50)
+        print("Características implementadas:")
+        print("✅ Comportamientos realistas por tipo de vehículo")
+        print("✅ Red de calles del centro histórico")
+        print("✅ Semáforos inteligentes")
+        print("✅ Patrones de tráfico por horarios")
+        print("✅ Estadísticas en tiempo real")
+        print("✅ Mapa detallado con landmarks")
+        
+        while ejecutando:
+            for evento in pygame.event.get():
+                if evento.type == pygame.QUIT:
+                    ejecutando = False
+                elif evento.type == pygame.KEYDOWN:
+                    if evento.key == pygame.K_SPACE:
+                        self._generar_vehiculo_inteligente()
+                    elif evento.key == pygame.K_r:
+                        # Reiniciar simulación
+                        self.vehiculos.clear()
+                        self.vehiculos_generados = 0
+                        self.estadisticas = {k: 0 for k in self.estadisticas.keys()}
+                    elif evento.key == pygame.K_t:
+                        # Cambiar hora del día
+                        self.hora_simulada = (self.hora_simulada + 2) % 24
+                    elif evento.key == pygame.K_c:
+                        mostrar_calles = not mostrar_calles
+                    elif evento.key == pygame.K_ESCAPE:
+                        ejecutando = False
+            
+            # Avanzar hora simulada lentamente
+            self.hora_simulada += 0.001  # Muy lento para observar cambios
+            if self.hora_simulada >= 24:
+                self.hora_simulada = 0
+            
+            # Generar vehículos automáticamente
+            if len(self.vehiculos) < 100:  # Límite aumentado
+                if random.random() < 0.3:  # 30% chance por frame
+                    self._generar_vehiculo_inteligente()
+            
+            # Actualizar semáforos
+            for semaforo in self.semaforos:
+                semaforo.actualizar()
+            
+            # Actualizar vehículos
+            for vehiculo in self.vehiculos[:]:
+                if not vehiculo.actualizar(self.vehiculos, self.semaforos):
+                    self.vehiculos.remove(vehiculo)
+            
+            # Actualizar estadísticas
+            self._actualizar_estadisticas()
+            
+            # Dibujar todo
+            if mostrar_calles:
+                self._dibujar_mapa_detallado()
+            else:
+                self.pantalla.fill(COLORES['FONDO'])
+            
+            # Dibujar elementos de tráfico
+            for semaforo in self.semaforos:
+                semaforo.dibujar(self.pantalla)
+            
+            for vehiculo in self.vehiculos:
+                vehiculo.dibujar(self.pantalla)
+            
+            # Interfaz
+            self._mostrar_estadisticas_avanzadas()
+            self._mostrar_controles()
+            
+            pygame.display.flip()
+            self.reloj.tick(FPS)
+        
+        # Estadísticas finales
+        tiempo_total = time.time() - tiempo_inicio
+        print(f"\n📊 RESUMEN DE LA SIMULACIÓN:")
+        print(f"Tiempo total: {tiempo_total:.1f} segundos")
+        print(f"Vehículos generados: {self.vehiculos_generados}")
+        print(f"Promedio de vehículos por minuto: {(self.vehiculos_generados / tiempo_total) * 60:.1f}")
+        
+        pygame.quit()
+
+if __name__ == "__main__":
+    print("🏛️ SIMULACIÓN DE TRÁFICO - CENTRO HISTÓRICO DEL CUSCO")
+    print("=" * 60)
+    print("Una simulación realista que incluye:")
+    print("🚗 Diferentes tipos de vehículos con comportamientos únicos")
+    print("🏛️ Mapa detallado basado en el centro histórico real")
+    print("🚦 Sistema de semáforos inteligente")
+    print("⏰ Patrones de tráfico que cambian según la hora")
+    print("📊 Estadísticas completas en tiempo real")
+    print("🎮 Controles interactivos para explorar la simulación")
+    print("\nPresiona cualquier tecla en la ventana para comenzar...")
+    
+    try:
+        simulacion = SimulacionTrafico()
+        simulacion.ejecutar()
+    except KeyboardInterrupt:
+        print("\n👋 Simulación terminada por el usuario")
+    except Exception as e:
+        print(f"\n❌ Error en la simulación: {e}")
+        print("Asegúrate de tener pygame instalado: pip install pygame")
