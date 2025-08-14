@@ -1,0 +1,42 @@
+<section>
+                    <div className='card-base'>
+                        <div className='font-mono'>
+                            Treeking
+                        </div>
+                        <Swiper
+                            slidesPerView={3} loop={true}>
+                            {destTrekking.map((dest, idx) => (
+                                <SwiperSlide key={idx}>
+                                    <CardTour
+                                        img={dest.img}
+                                        title={dest.title}
+                                        subtitle={dest.subtitle}
+                                        description={dest.description}
+                                        url={dest.url}
+                                    />
+                                </SwiperSlide>
+                            ))}
+                        </Swiper>
+                    </div>
+                </section>
+                <section>
+                    <div className='card-base'>
+                        <div className='font-mono'>
+                            Dayli Tours
+                        </div>
+                        <Swiper slidesPerView={3} loop={true} >
+                            {destFullDay.map((dest, idx) => (
+                                <SwiperSlide>
+                                    <CardTour
+                                        key={idx}
+                                        img={dest.img}
+                                        title={dest.title}
+                                        subtitle={dest.subtitle}
+                                        description={dest.description}
+                                        url={dest.url}
+                                    />
+                                </SwiperSlide>
+                            ))}
+                        </Swiper>
+                    </div>
+                </section>
