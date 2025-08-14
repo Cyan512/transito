@@ -1,0 +1,65 @@
+export default function TourCard({ tour }) {
+    return (
+        <div className="max-w-sm bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-2xl transition-shadow duration-300">
+            <div className="relative">
+                <img
+                    src={tour.image}
+                    alt={tour.title}
+                    className="w-full h-56 object-cover"
+                />
+                {/* Featured Badge */}
+                {tour.featured && (
+                    <span className="absolute top-4 left-4 bg-teal-500 text-white text-sm font-semibold px-3 py-1 rounded-full">
+                        Featured
+                    </span>
+                )}
+                {/* Top-right icons */}
+                <div className="absolute top-4 right-4 flex space-x-2">
+                    <div className="flex items-center bg-black/50 text-white text-xs px-2 py-1 rounded">
+                        <Camera size={14} className="mr-1" /> {tour.photos}
+                    </div>
+                    <div className="flex items-center bg-black/50 text-white text-xs px-2 py-1 rounded">
+                        <Users size={14} className="mr-1" /> {tour.videos}
+                    </div>
+                </div>
+            </div>
+
+            <div className="p-6">
+                {/* Location */}
+                <p className="text-sm text-teal-500 flex items-center mb-1">
+                    <span className="mr-1">📍</span> {tour.location}
+                </p>
+
+                {/* Title */}
+                <h3 className="text-lg font-bold mb-2">{tour.title}</h3>
+
+                {/* Rating */}
+                <div className="flex items-center mb-3">
+                    {[...Array(tour.rating)].map((_, i) => (
+                        <Star key={i} size={16} className="text-yellow-400" />
+                    ))}https://github.com/Cyan512/transito/tree/main
+                    <span className="text-sm text-gray-500 ml-2">({tour.reviews} Review{tour.reviews > 1 ? 's' : ''})</span>
+                </div>
+
+                {/* Duration & People */}
+                <div className="flex items-center text-gray-600 text-sm mb-4 space-x-4">
+                    <div className="flex items-center">
+                        <Clock size={16} className="mr-1" /> {tour.duration}
+                    </div>
+                    <div className="flex items-center">
+                        <Users size={16} className="mr-1" /> {tour.people} Person
+                    </div>
+                </div>
+
+                {/* Price & Bookmark */}
+                <div className="flex items-center justify-between">
+                    <div>
+                        <span className="text-lg font-bold text-green-500">${tour.price}</span>
+                        <span className="text-gray-400 line-through ml-2">${tour.originalPrice}</span>
+                    </div>
+                    <Bookmark size={20} className="text-gray-400 hover:text-green-500 cursor-pointer" />
+                </div>
+            </div>
+        </div>
+    );
+}
